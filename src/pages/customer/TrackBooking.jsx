@@ -20,6 +20,15 @@ export default function TrackBooking() {
       const { data: d } = await supabase.from('profiles').select('full_name, phone').eq('id', data.driver_id).single()
       setDriver(d)
     }
+    const { data: existingRating } = await supabase
+      .from('ratings')
+      .select('rating')
+      .eq('booking_id', id)
+      .maybeSingle()
+    if (existingRating) {
+      setRating(existingRating.rating)
+      setSubmittedRating(true)
+    }
   }
 
   useEffect(() => {
@@ -33,8 +42,9 @@ export default function TrackBooking() {
   }, [id])
 
   async function submitRating() {
-    await supabase.from('ratings').insert({ booking_id: id, rating, driver_id: booking.driver_id })
-    setSubmittedRating(true)
+    if (submittedRating) return
+    const { error } = await supabase.from('ratings').insert({ booking_id: id, rating, driver_id: booking.driver_id })
+    if (!error) setSubmittedRating(true)
   }
 
   if (!booking) return <div className="max-w-2xl mx-auto px-5 py-10 dash">Loading…</div>
@@ -106,7 +116,24 @@ export default function TrackBooking() {
           </button>
         </div>
       )}
-      {submittedRating && <p className="text-line dash">Thanks for the rating.</p>}
+      {submittedRating && (
+        <div className="card p-5">
+          <p className="dash mb-2">Your rating</p>
+          <div className="flex gap-2 mb-2">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <span
+                key={n}
+                className={`w-9 h-9 flex items-center justify-center rounded-sm border font-mono ${
+                  n <= rating ? 'border-signal text-signal' : 'border-asphalt-700 text-asphalt-600'
+                }`}
+              >
+                {n}
+              </span>
+            ))}
+          </div>
+          <p className="text-line dash">Thanks for the rating.</p>
+        </div>
+      )}
     </div>
   )
 }

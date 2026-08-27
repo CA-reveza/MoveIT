@@ -52,6 +52,27 @@ create table if not exists ratings (
   created_at timestamptz default now()
 );
 
+-- One rating per booking — without this, refreshing the track page right
+-- after submitting (before the page re-fetches) could insert a second row
+-- for the same trip. Existing bookings may already have duplicate rating
+-- rows from before this constraint existed, so clear those out first (kept:
+-- the most recent rating per booking) — otherwise the unique index below
+-- fails with "could not create unique index ... is duplicated".
+delete from ratings a using ratings b
+where a.booking_id = b.booking_id
+  and (a.created_at, a.ctid) < (b.created_at, b.ctid);
+
+-- (Postgres has no "add constraint if not exists", so this is guarded
+-- manually like the realtime publication check below.)
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'ratings_booking_id_key'
+  ) then
+    alter table ratings add constraint ratings_booking_id_key unique (booking_id);
+  end if;
+end $$;
+
 -- Auto-create a profile row whenever a new auth user signs up, reading
 -- full_name / phone / role out of the metadata passed to supabase.auth.signUp().
 -- Runs as SECURITY DEFINER so it works even before the user has a session

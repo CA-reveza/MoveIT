@@ -31,17 +31,30 @@ export function AuthProvider({ children }) {
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  async function signUp({ email, password, fullName, phone, role }) {
-    // Profile fields go in auth metadata; a DB trigger (see supabase/schema.sql)
-    // reads them and creates the profiles row server-side. Don't insert into
-    // profiles from the client here — signUp() doesn't guarantee an active
-    // session (e.g. when email confirmation is on), so a client insert can hit
-    // RLS with auth.uid() = null before confirmation.
+  async function signUp({
+    email, password, fullName, phone, role,
+    vehicleType, vehicleNumber, aadharNumber, drivingLicenceNumber, vehicleRegNumber,
+  }) {
+    // Profile fields go in auth metadata; a DB trigger (see supabase/schema.sql
+    // and supabase/motor_driving_licence_migration.sql) reads them and creates
+    // the profiles row server-side. Don't insert into profiles from the client
+    // here — signUp() doesn't guarantee an active session (e.g. when email
+    // confirmation is on), so a client insert can hit RLS with auth.uid() =
+    // null before confirmation.
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName, phone, role },
+        data: {
+          full_name: fullName,
+          phone,
+          role,
+          vehicle_type: vehicleType,
+          vehicle_number: vehicleNumber,
+          aadhar_number: aadharNumber,
+          driving_licence_number: drivingLicenceNumber,
+          vehicle_reg_number: vehicleRegNumber,
+        },
       },
     })
     if (error) throw error

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
-import { vehicleById } from '../../lib/pricing.js'
+import { vehicleById, splitBookingFare } from '../../lib/pricing.js'
 
 const NEXT_STATUS = {
   accepted: 'picked_up',
@@ -62,6 +62,7 @@ export default function DriverTrip() {
   if (!booking) return <div className="max-w-2xl mx-auto px-5 py-10 dash">Loading…</div>
 
   const vehicle = vehicleById(booking.vehicle_type)
+  const driverRate = splitBookingFare(booking).payout
 
   return (
     <div className="max-w-2xl mx-auto px-5 py-10">
@@ -77,7 +78,7 @@ export default function DriverTrip() {
         {booking.notes && <p className="text-asphalt-400 text-sm mt-3 italic">"{booking.notes}"</p>}
         <div className="flex justify-between font-mono text-sm mt-4 text-asphalt-400">
           <span>{vehicle?.label} · {booking.distance_km}km</span>
-          <span className="text-line">₹{booking.fare_estimate}</span>
+          <span className="text-line">₹{driverRate} <span className="text-asphalt-500 text-xs">(your rate)</span></span>
         </div>
       </div>
 

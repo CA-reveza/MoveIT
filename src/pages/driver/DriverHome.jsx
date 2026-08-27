@@ -27,6 +27,7 @@ export default function DriverHome() {
         .from('bookings')
         .select('*')
         .eq('status', 'pending')
+        .not('vehicle_type', 'is', null) // OrderIt-bridged jobs awaiting admin vehicle assignment stay hidden until then
         .order('created_at', { ascending: true })
         .limit(20)
       setPending(jobs || [])

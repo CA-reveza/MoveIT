@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, Navigate } from 'react-router-dom'
 import Navbar from './components/Navbar.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 
@@ -16,9 +16,6 @@ import DriverHistory from './pages/driver/DriverHistory.jsx'
 import DriverPayout from './pages/driver/DriverPayout.jsx'
 
 import AdminDashboard from './pages/admin/AdminDashboard.jsx'
-import AdminBookings from './pages/admin/AdminBookings.jsx'
-import AdminDrivers from './pages/admin/AdminDrivers.jsx'
-import AdminReports from './pages/admin/AdminReports.jsx'
 
 export default function App() {
   return (
@@ -102,30 +99,9 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/admin/bookings"
-          element={
-            <ProtectedRoute allow={['admin']}>
-              <AdminBookings />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/drivers"
-          element={
-            <ProtectedRoute allow={['admin']}>
-              <AdminDrivers />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/reports"
-          element={
-            <ProtectedRoute allow={['admin']}>
-              <AdminReports />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/admin/bookings" element={<Navigate to="/admin" replace />} />
+        <Route path="/admin/drivers" element={<Navigate to="/admin" replace />} />
+        <Route path="/admin/reports" element={<Navigate to="/admin" replace />} />
       </Routes>
     </div>
   )

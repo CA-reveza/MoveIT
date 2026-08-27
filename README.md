@@ -74,7 +74,7 @@ key when a supplier books a vehicle, tagged `source = 'orderit'` with an
 those bookings — driver accept/progress flow — works exactly like a normal
 MoveIT booking.
 
-**Run these three migrations, in order, in addition to the base `schema.sql`:**
+**Run these four migrations, in order, in addition to the base `schema.sql`:**
 1. `supabase/motor_driver_vehicle_migration.sql` — adds `vehicle_type`,
    `vehicle_number`, `address`, `aadhar_number`, `vehicle_reg_number` to
    `profiles`. Without this, admins have no way to assign a driver a vehicle,
@@ -88,6 +88,42 @@ MoveIT booking.
    a known Supabase provisioning bug on some projects, and this sidesteps it
    entirely. Fill in the two placeholders (OrderIt's Edge Function URL and
    your shared webhook secret) before running.
+4. `supabase/motor_orderit_distance_cap_migration.sql` — formalizes the
+   `source`/`external_order_id` columns and adds a CHECK constraint capping
+   `source = 'orderit'` bookings at 20km. Since OrderIt inserts bookings
+   directly via a service-role key, this DB constraint is the only place the
+   distance cap can actually be enforced regardless of which app is writing.
+
+### OrderIt delivery pricing (per-vehicle distance tiers)
+
+OrderIt-bridged bookings don't use the vehicle-based `estimateFare`/
+`splitFare` in `src/lib/pricing.js` that a direct MoveIT customer booking
+does — they use per-vehicle distance tiers instead (from
+`MoveIT_Final_2W_3W_Price_List.xlsx`), computed by `orderItDeliverySplit()`:
+
+| Vehicle | 1–5 km (flat) | Per km after 5km | Platform charge | Driver share | MoveIT margin |
+|---|---|---|---|---|---|
+| Two-Wheeler (`bike`) | ₹90 | +₹20/km | ₹20 flat | 70% of delivery charge | 30% of delivery charge |
+| 3-Wheeler (`three_wheeler`) | ₹125 | +₹35/km | ₹20 flat | 80% of delivery charge | 20% of delivery charge |
+
+Capped at 20km (see migration above). The platform charge is flat regardless
+of distance and isn't split — it's entirely MoveIT's, on top of its margin
+share of the delivery charge. Example at 10km: Two-Wheeler customer total
+₹210 (driver ₹133 / MoveIT ₹77), 3-Wheeler customer total ₹320 (driver ₹240
+/ MoveIT ₹80).
+
+Only 2W/3W have official rates so far since those are the only vehicle
+types OrderIt currently offers for hotel/restaurant deliveries. Any other
+vehicle type on an `orderit`-sourced booking falls back to a placeholder
+rate in `pricing.js` (flagged in a comment there) rather than breaking.
+
+`splitBookingFare(booking)` is the single entry point the app (admin
+dashboard, reports, driver payout) uses to get the right split — it checks
+`booking.source` and routes to `orderItDeliverySplit()` for `'orderit'` rows
+or the existing flat-commission `splitFare()` for everything else. Direct
+customer bookings in MoveIT keep their current vehicle-based pricing
+unchanged for now — a separate calculation for that is planned but not yet
+built.
 
 **What changed from the base scaffold:**
 - `src/pages/admin/AdminDrivers.jsx` — vehicle assignment UI, KYC status,
