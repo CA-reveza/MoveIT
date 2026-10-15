@@ -33,7 +33,8 @@ export default function AdminDashboard() {
     setBookings(data || [])
   }, [])
 
-  const loadDrivers = useCallback(async () => {    const { data } = await supabase.from('profiles').select('*').eq('role', 'driver').order('full_name')
+  const loadDrivers = useCallback(async () => {
+    const { data } = await supabase.from('profiles').select('*').eq('role', 'driver').order('full_name')
     setDrivers(data || [])
   }, [])
 
@@ -44,10 +45,30 @@ export default function AdminDashboard() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  // Every OrderIt order comes in via "Book via MoveIT" with no vehicle
+  // picked — APMC has no further say past that click, so this admin
+  // console is the ONLY place that moves it forward. A new one landing here
+  // needs to be unmissable: browser notification the instant it arrives
+  // (INSERT event, not just a reload), plus a standing banner for anything
+  // already sitting unassigned when the page loads or is reopened.
   useEffect(() => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
     const channel = supabase
       .channel('admin-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, loadBookings)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bookings' }, (payload) => {
+        const b = payload.new
+        if (b.source === 'orderit' && !b.vehicle_type && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          const orders = b.order_details?.orders || []
+          new Notification('New OrderIt delivery — needs a vehicle', {
+            body: orders.length
+              ? `${orders.map((o) => o.order_number).join(', ')} · ${orders.reduce((n, o) => n + o.items.length, 0)} items · ${b.pickup_address} → ${b.drop_address}`
+              : `${b.pickup_address} → ${b.drop_address}`
+          })
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadDrivers)
       .subscribe()
     return () => supabase.removeChannel(channel)
@@ -56,6 +77,7 @@ export default function AdminDashboard() {
   const completed = bookings.filter((b) => b.status === 'completed')
   const activeBookings = bookings.filter((b) => !['completed', 'cancelled'].includes(b.status))
   const onlineDrivers = drivers.filter((d) => d.is_online)
+  const unassignedOrderIt = bookings.filter((b) => b.source === 'orderit' && !b.vehicle_type && b.status === 'pending')
   const totals = completed.reduce(
     (acc, b) => {
       const s = splitBookingFare(b)
@@ -72,9 +94,24 @@ export default function AdminDashboard() {
       <p className="dash mb-2">Control room</p>
       <h1 className="h1 mb-8">Admin</h1>
 
+      {unassignedOrderIt.length > 0 && (
+        <button
+          type="button"
+          className="card p-4 mb-6 w-full text-left border border-line"
+          onClick={() => setTab('bookings')}
+        >
+          <p className="text-line font-display">
+            🔔 {unassignedOrderIt.length} OrderIt {unassignedOrderIt.length === 1 ? 'delivery needs' : 'deliveries need'} a vehicle assigned
+          </p>
+          <p className="dash mt-1">Go to All Bookings → Segregate 2-Wheeler or 3-Wheeler</p>
+        </button>
+      )}
+
       <div className="tabs">
         <button className={tab === 'overview' ? 'tab active' : 'tab'} onClick={() => setTab('overview')}>Overview</button>
-        <button className={tab === 'bookings' ? 'tab active' : 'tab'} onClick={() => setTab('bookings')}>All Bookings ({bookings.length})</button>
+        <button className={tab === 'bookings' ? 'tab active' : 'tab'} onClick={() => setTab('bookings')}>
+          All Bookings ({bookings.length}){unassignedOrderIt.length > 0 ? ` · ${unassignedOrderIt.length} 🔔` : ''}
+        </button>
         <button className={tab === 'drivers' ? 'tab active' : 'tab'} onClick={() => setTab('drivers')}>Drivers ({drivers.length})</button>
         <button className={tab === 'reports' ? 'tab active' : 'tab'} onClick={() => setTab('reports')}>Reports</button>
       </div>
@@ -164,6 +201,16 @@ function Bookings({ bookings, drivers }) {
     await supabase.from('bookings').update({ vehicle_type: vehicleTypeId }).eq('id', booking.id)
   }
 
+  // Unassigned OrderIt jobs float to the top — they're invisible to every
+  // driver until someone here picks a vehicle, so they're the thing most
+  // worth seeing first, not buried wherever they happen to sort by date.
+  const sortedBookings = [...bookings].sort((a, b) => {
+    const aUnassigned = a.source === 'orderit' && !a.vehicle_type && a.status === 'pending'
+    const bUnassigned = b.source === 'orderit' && !b.vehicle_type && b.status === 'pending'
+    if (aUnassigned !== bUnassigned) return aUnassigned ? -1 : 1
+    return new Date(b.created_at) - new Date(a.created_at)
+  })
+
   return (
     <div className="overflow-x-auto card">
       <table className="w-full text-sm">
@@ -182,14 +229,15 @@ function Bookings({ bookings, drivers }) {
           </tr>
         </thead>
         <tbody>
-          {bookings.map((b) => {
+          {sortedBookings.map((b) => {
             const assignedDriver = drivers.find((d) => d.id === b.driver_id)
             const canAssign = ASSIGNABLE_STATUSES.includes(b.status)
             const eligibleDrivers = drivers.filter((d) => d.kyc_status === 'verified' && d.vehicle_type)
             const fare = b.fare_final ?? b.fare_estimate
             const split = b.status === 'completed' ? splitBookingFare(b) : null
+            const needsVehicle = b.source === 'orderit' && !b.vehicle_type && b.status === 'pending'
             return (
-              <tr key={b.id} className="border-b border-asphalt-800 text-asphalt-200 align-top">
+              <tr key={b.id} className={`border-b border-asphalt-800 text-asphalt-200 align-top ${needsVehicle ? 'bg-line/5' : ''}`}>
                 <td className="p-3 font-mono text-xs whitespace-nowrap text-asphalt-400">{formatDate(b.created_at)}</td>
                 <td className="p-3 font-mono text-xs">{b.id.slice(0, 8)}</td>
                 <td className="p-3">
@@ -197,7 +245,21 @@ function Bookings({ bookings, drivers }) {
                     {b.source === 'orderit' ? 'OrderIt' : 'Direct'}
                   </span>
                 </td>
-                <td className="p-3"><p className="truncate max-w-xs">{b.pickup_address} → {b.drop_address}</p></td>
+                <td className="p-3">
+                  <p className="truncate max-w-xs">{b.pickup_address} → {b.drop_address}</p>
+                  {b.order_details?.orders?.map((o) => (
+                    <details key={o.order_number} className="mt-1 text-xs text-asphalt-400">
+                      <summary className="cursor-pointer text-line">
+                        Order {o.order_number}{o.hotel ? ` · ${o.hotel}` : ''} · {o.items.length} items · ₹{o.goods_total}
+                      </summary>
+                      <ul className="mt-1 ml-3 list-disc">
+                        {o.items.map((i, idx) => (
+                          <li key={idx}>{i.name} — {i.quantity} {i.unit} × ₹{i.rate} = ₹{i.amount}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  ))}
+                </td>
                 <td className="p-3 font-mono text-xs min-w-[140px]">
                   {b.vehicle_type ? (
                     vehicleById(b.vehicle_type)?.label || b.vehicle_type
@@ -360,10 +422,19 @@ function Drivers({ drivers, onChanged }) {
               {urls?.driving_licence && <a href={urls.driving_licence} target="_blank" rel="noreferrer" className="text-line text-xs underline">View DL</a>}
               {urls?.vehicle_reg && <a href={urls.vehicle_reg} target="_blank" rel="noreferrer" className="text-line text-xs underline">View RC</a>}
               {docErrors[d.id] && <span className="text-red-500 text-xs font-mono">{docErrors[d.id]}</span>}
-              {d.kyc_status === 'submitted' && (
-                <div className="flex gap-2 ml-auto">
-                  <button className="btn-ghost py-1 px-3 text-xs border-green-600 text-green-500" onClick={() => setKycStatus(d, 'verified')}>Verify</button>
-                  <button className="btn-ghost py-1 px-3 text-xs border-red-700 text-red-500" onClick={() => setKycStatus(d, 'pending')}>Reject</button>
+              {(d.kyc_status === 'submitted' || d.kyc_status === 'pending') && (
+                <div className="flex items-center gap-2 ml-auto">
+                  {d.kyc_status === 'pending' && (
+                    <span className="text-asphalt-500 text-xs">
+                      {[d.aadhar_doc_path, d.driving_licence_doc_path, d.vehicle_reg_doc_path].filter(Boolean).length}/3 docs on file —
+                    </span>
+                  )}
+                  <button className="btn-ghost py-1 px-3 text-xs border-green-600 text-green-500" onClick={() => setKycStatus(d, 'verified')}>
+                    Verify{d.kyc_status === 'pending' ? ' anyway' : ''}
+                  </button>
+                  {d.kyc_status === 'submitted' && (
+                    <button className="btn-ghost py-1 px-3 text-xs border-red-700 text-red-500" onClick={() => setKycStatus(d, 'pending')}>Reject</button>
+                  )}
                 </div>
               )}
               {d.kyc_status === 'verified' && (

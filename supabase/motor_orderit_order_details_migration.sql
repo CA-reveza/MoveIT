@@ -1,0 +1,12 @@
+-- ============================================================================
+-- MOTOR — Migration: keep OrderIt order details on the booking
+-- Run on the MOTOR project's Supabase SQL Editor. Safe to re-run.
+--
+-- When APMC packs an order, OrderIt auto-books it here. The booking now
+-- carries the order number, the list of goods and their prices as JSON
+-- (shape: { orders: [{ order_number, hotel, items: [{name, unit, quantity,
+-- rate, amount}], goods_total }] }) so MoveIT admin can see exactly what is
+-- being moved. Without this column OrderIt falls back to putting the same
+-- information in the booking's notes text.
+-- ============================================================================
+alter table bookings add column if not exists order_details jsonb;

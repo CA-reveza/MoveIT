@@ -74,25 +74,38 @@ key when a supplier books a vehicle, tagged `source = 'orderit'` with an
 those bookings — driver accept/progress flow — works exactly like a normal
 MoveIT booking.
 
-**Run these four migrations, in order, in addition to the base `schema.sql`:**
+**Run these seven migrations, in order, in addition to the base `schema.sql`:**
 1. `supabase/motor_driver_vehicle_migration.sql` — adds `vehicle_type`,
    `vehicle_number`, `address`, `aadhar_number`, `vehicle_reg_number` to
    `profiles`. Without this, admins have no way to assign a driver a vehicle,
    so drivers can never accept any job (including bridged ones).
 2. `supabase/motor_document_upload_migration.sql` — private Storage bucket +
    RLS for drivers to upload Aadhar/vehicle-RC photos, viewable by admins.
-3. `supabase/motor_pgnet_webhook_workaround.sql` — pushes booking status
+3. `supabase/motor_driving_licence_migration.sql` — adds
+   `driving_licence_number`/`driving_licence_doc_path` to `profiles`. Signup
+   requires all three documents (Aadhar, DL, RC) — skip this one and driver
+   signup fails outright with `Could not find the 'driving_licence_doc_path'
+   column of 'profiles' in the schema cache`.
+4. `supabase/motor_pgnet_webhook_workaround.sql` — pushes booking status
    changes back to OrderIt via a `pg_net` trigger. Use this instead of the
    dashboard's "Database Webhooks" feature if you hit
    `ERROR: 3F000: schema "supabase_functions" does not exist` there — that's
    a known Supabase provisioning bug on some projects, and this sidesteps it
    entirely. Fill in the two placeholders (OrderIt's Edge Function URL and
    your shared webhook secret) before running.
-4. `supabase/motor_orderit_distance_cap_migration.sql` — formalizes the
+5. `supabase/motor_orderit_distance_cap_migration.sql` — formalizes the
    `source`/`external_order_id` columns and adds a CHECK constraint capping
    `source = 'orderit'` bookings at 20km. Since OrderIt inserts bookings
    directly via a service-role key, this DB constraint is the only place the
    distance cap can actually be enforced regardless of which app is writing.
+6. `supabase/motor_orderit_vehicle_optional_migration.sql` — drops the
+   `NOT NULL` on `bookings.vehicle_type`, so OrderIt-bridged bookings can
+   arrive with no vehicle yet ("Book via MoveIT" no longer asks APMC to pick
+   one) — MOTOR's own admin assigns 2W/3W afterwards from the Bookings tab.
+7. `supabase/motor_orderit_order_details_migration.sql` — adds
+   `bookings.order_details` (JSON) so each OrderIt booking carries its order
+   number, goods list and prices for MoveIT admin. Skipping it is safe: OrderIt
+   falls back to putting the same details in the booking notes.
 
 ### OrderIt delivery pricing (per-vehicle distance tiers)
 

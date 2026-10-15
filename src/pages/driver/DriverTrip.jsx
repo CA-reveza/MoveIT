@@ -75,6 +75,14 @@ export default function DriverTrip() {
       <div className="card p-5 mb-5">
         <p className="text-asphalt-200">↑ {booking.pickup_address}</p>
         <p className="text-asphalt-400 mt-1">↓ {booking.drop_address}</p>
+        {booking.order_details?.orders?.map((o) => (
+          <div key={o.order_number} className="mt-3 text-sm text-asphalt-300">
+            <p className="font-mono text-xs text-asphalt-400">Order {o.order_number}{o.hotel ? ` · ${o.hotel}` : ''}</p>
+            <ul className="list-disc ml-5">
+              {o.items.map((i, idx) => <li key={idx}>{i.name} — {i.quantity} {i.unit}</li>)}
+            </ul>
+          </div>
+        ))}
         {booking.notes && <p className="text-asphalt-400 text-sm mt-3 italic">"{booking.notes}"</p>}
         <div className="flex justify-between font-mono text-sm mt-4 text-asphalt-400">
           <span>{vehicle?.label} · {booking.distance_km}km</span>
